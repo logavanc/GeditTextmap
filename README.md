@@ -2,4 +2,4 @@ This is a Gedit plugin for displaying a 10,000 foot view of your code in the sid
 
 To install this plugin copy the files into ~/.local/share/gedit/plugins/ and restart Gedit. Then activate the plugin through the preferences.
 
-![Screenshot](http://foodnotblogs.com/jono/textmap_screenshot.png)
+![Screenshot](textmap.png)
