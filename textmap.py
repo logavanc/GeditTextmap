@@ -250,7 +250,7 @@ class TextmapWindowHelper:
     image = Gtk.Image()
     image.set_from_stock(Gtk.STOCK_DND_MULTIPLE, Gtk.IconSize.BUTTON)
     me.textmapview = TextmapView(me.window)
-    me.ui_id = panel.add_item(me.textmapview, "TextMap", "textMap", image)
+    me.ui_id = panel.add_titled(me.textmapview, "TextMap", "textMap")
     
     me.panel = panel
 
