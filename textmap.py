@@ -14,18 +14,22 @@
 # You should have received a copy of the GNU General Public License along with
 # this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+"""textmap is a Python3 plugin for Gedit.
 
-import time
-import sys
-import math
+This plugin is used for displaying a 10,000 foot view of your code in the
+sidebar.  It is based on Dan Gindikin's original code, but has been updated
+to work with Gedit 3.
+
+To install this plugin copy the files into ~/.local/share/gedit/plugins/ and
+restart Gedit. Then activate the plugin through the preferences.
+
+"""
+
+__version__ = "0.2 beta - gtk3"
+
 import cairo
-import re
-import copy
-import platform
 
 from gi.repository import Gtk, GdkPixbuf, Gdk, GtkSource, Gio, Gedit, GObject
-
-version = "0.2 beta - gtk3"
 
 
 def document_lines(document):
@@ -43,22 +47,29 @@ def visible_lines_top_bottom(geditwin):
     return topiter.get_line(), botiter.get_line()
 
 
-def dark(r, g, b):
-    "return whether the color is light or dark"
-    if r + g + b < 1.5:
+def is_dark(red, green, blue):
+    """ This function determines if an rgb value is dark or not.
+    """
+    if red + green + blue < 1.5:
         return True
     else:
         return False
 
 
 def darken(fraction, r, g, b):
-    return r - fraction * r, g - fraction * g, b - fraction * b
+    return (
+        r - fraction * r,
+        g - fraction * g,
+        b - fraction * b
+    )
 
 
 def lighten(fraction, r, g, b):
-    return r + (1 - r) * fraction,\
-           g + (1 - g) * fraction,\
-           b + (1 - b) * fraction
+    return (
+        r + (1 - r) * fraction,
+        g + (1 - g) * fraction,
+        b + (1 - b) * fraction
+    )
 
 
 def queue_refresh(textmapview):
@@ -80,75 +91,81 @@ def str2rgb(s):
 
 
 class TextmapView(Gtk.VBox):
-    def __init__(me, geditwin):
-        Gtk.VBox.__init__(me)
+    def __init__(self, geditwin):
+        Gtk.VBox.__init__(self)
 
-        me.geditwin = geditwin
+        self.geditwin = geditwin
 
-        me.geditwin.connect("active-tab-changed", me.tab_changed)
-        me.geditwin.connect("tab-added", me.tab_added)
+        self.geditwin.connect("active-tab-changed", self.tab_changed)
+        self.geditwin.connect("tab-added", self.tab_added)
 
         darea = Gtk.DrawingArea()
-        darea.connect("draw", me.draw)
+        darea.connect("draw", self.draw)
 
         darea.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
-        darea.connect("button-press-event", me.button_press)
-        darea.connect("scroll-event", me.on_darea_scroll_event)
+        darea.connect("button-press-event", self.button_press)
+        darea.connect("scroll-event", self.on_darea_scroll_event)
 
         darea.add_events(Gdk.EventMask.POINTER_MOTION_MASK)
-        darea.connect("motion-notify-event", me.on_darea_motion_notify_event)
+        darea.connect("motion-notify-event", self.on_darea_motion_notify_event)
 
-        me.pack_start(darea, True, True, 0)
+        self.pack_start(darea, True, True, 0)
 
-        me.show_all()
+        self.show_all()
 
-        me.topL = None
-        me.botL = None
-        me.scale = 4  # TODO: set this smartly somehow
-        me.darea = darea
+        self.topL = None
+        self.botL = None
+        self.scale = 4  # TODO: set this smartly somehow
+        self.darea = darea
 
-        me.winHeight = 0
-        me.winWidth = 0
-        me.linePixelHeight = 0
+        self.winHeight = 0
+        self.winWidth = 0
+        self.linePixelHeight = 0
 
-        me.currentDoc = None
-        me.currentView = None
+        self.currentDoc = None
+        self.currentView = None
 
-    def tab_added(me, window, tab):
-        me.currentView = tab.get_view()
-        me.currentDoc = tab.get_document()
+    def tab_added(self, window, tab):
+        self.currentView = tab.get_view()
+        self.currentDoc = tab.get_document()
 
-        me.currentDoc.connect('changed', me.on_doc_changed)
-        me.currentView.get_vadjustment().connect('value-changed',
-                                                 me.on_vadjustment_changed)
+        self.currentDoc.connect(
+            'changed',
+            self.on_doc_changed
+        )
+
+        self.currentView.get_vadjustment().connect(
+            'value-changed',
+            self.on_vadjustment_changed
+        )
 
 # TODO: make sure value-changed is not conflicting with darea move events
 
-    def tab_changed(me, window, event):
-        me.currentView = me.geditwin.get_active_view()
-        me.currentDoc = me.geditwin.get_active_tab().get_document()
+    def tab_changed(self, window, event):
+        self.currentView = self.geditwin.get_active_view()
+        self.currentDoc = self.geditwin.get_active_tab().get_document()
 
-        me.lines = document_lines(me.currentDoc)
-        queue_refresh(me)
+        self.lines = document_lines(self.currentDoc)
+        queue_refresh(self)
 
-    def on_doc_changed(me, buffer):
-        me.lines = document_lines(me.currentDoc)
-        queue_refresh(me)
+    def on_doc_changed(self, buffer):
+        self.lines = document_lines(self.currentDoc)
+        queue_refresh(self)
 
-    def on_vadjustment_changed(me, adjustment):
-        queue_refresh(me)
+    def on_vadjustment_changed(self, adjustment):
+        queue_refresh(self)
 
-    def on_darea_motion_notify_event(me, widget, event):
+    def on_darea_motion_notify_event(self, widget, event):
         "used for clicking and dragging"
 
         if event.state & Gdk.ModifierType.BUTTON1_MASK:
-            me.scroll_from_y_mouse_pos(event.y)
+            self.scroll_from_y_mouse_pos(event.y)
 
-    def on_darea_scroll_event(me, widget, event):
+    def on_darea_scroll_event(self, widget, event):
 
-# TODO: match this to me.currentView.get_vadjustment().get_page_size()
+# TODO: match this to self.currentView.get_vadjustment().get_page_size()
         pagesize = 12
-        topL, botL = visible_lines_top_bottom(me.geditwin)
+        topL, botL = visible_lines_top_bottom(self.geditwin)
         if event.direction == Gdk.ScrollDirection.UP and topL > pagesize:
             newI = topL - pagesize
         elif event.direction == Gdk.ScrollDirection.DOWN:
@@ -156,37 +173,50 @@ class TextmapView(Gtk.VBox):
         else:
             return
 
-        me.currentView.scroll_to_iter(
-            me.currentDoc.get_iter_at_line_index(newI, 0), 0, False, 0, 0)
+        self.currentView.scroll_to_iter(
+            self.currentDoc.get_iter_at_line_index(newI, 0), 0, False, 0, 0)
 
-        queue_refresh(me)
+        queue_refresh(self)
 
-    def scroll_from_y_mouse_pos(me, y):
+    def scroll_from_y_mouse_pos(self, y):
 
-        me.currentView.scroll_to_iter(me.currentDoc.get_iter_at_line_index(
-            int((len(me.lines) + (me.botL - me.topL)) * y / me.winHeight), 0),
-                                      0, True, 0, .5)
-        queue_refresh(me)
+        self.currentView.scroll_to_iter(
+            self.currentDoc.get_iter_at_line_index(
+                int(
+                    (
+                        len(self.lines) + (self.botL - self.topL)
+                    ) * y / self.winHeight
+                ),
+                0
+            ),
+            0,
+            True,
+            0,
+            0.5
+        )
+        queue_refresh(self)
 
-    def button_press(me, widget, event):
-        me.scroll_from_y_mouse_pos(event.y)
+    def button_press(self, widget, event):
+        self.scroll_from_y_mouse_pos(event.y)
 
-    def draw(me, widget, cr):
+    def draw(self, widget, cr):
 
-        if not me.currentDoc or not me.currentView:  # nothing open yet
+        if not self.currentDoc or not self.currentView:  # nothing open yet
             return
 
         bg = (0, 0, 0)
         fg = (1, 1, 1)
         try:
-            style = me.currentDoc.get_style_scheme().get_style('text')
+            style = self.currentDoc.get_style_scheme().get_style('text')
             # there is a style scheme, but it does not specify default
             if style is None:
                 bg = (1, 1, 1)
                 fg = (0, 0, 0)
             else:
-                fg, bg = map(str2rgb,
-                             style.get_properties('foreground', 'background'))
+                fg, bg = map(
+                    str2rgb,
+                    style.get_properties('foreground', 'background'))
+
         except:
             pass  # probably an older version of gedit, no style schemes yet
 
@@ -197,92 +227,99 @@ class TextmapView(Gtk.VBox):
 
         cr = win.cairo_create()
 
-        me.winHeight = win.get_height()
-        me.winWidth = win.get_width()
+        self.winHeight = win.get_height()
+        self.winWidth = win.get_width()
 
         cr.push_group()
 
         # draw the background
         cr.set_source_rgb(*bg)
         cr.move_to(0, 0)
-        cr.rectangle(0, 0, me.winWidth, me.winHeight)
+        cr.rectangle(0, 0, self.winWidth, self.winHeight)
         cr.fill()
         cr.move_to(0, 0)
 
-        if not me.lines:
+        if not self.lines:
             return
 
         # draw the text
         cr.select_font_face('monospace', cairo.FONT_SLANT_NORMAL,
                             cairo.FONT_WEIGHT_NORMAL)
-        cr.set_font_size(me.scale)
+        cr.set_font_size(self.scale)
 
-        if me.linePixelHeight == 0:
-            me.linePixelHeight = cr.text_extents("L")[
+        if self.linePixelHeight == 0:
+            self.linePixelHeight = cr.text_extents("L")[
                 3]  # height # TODO: make this more global
 
-        me.topL, me.botL = visible_lines_top_bottom(me.geditwin)
+        self.topL, self.botL = visible_lines_top_bottom(self.geditwin)
 
-        if dark(*fg):
+        if is_dark(*fg):
             faded_fg = lighten(.5, *fg)
         else:
             faded_fg = darken(.5, *fg)
 
         cr.set_source_rgb(*fg)
 
-        textViewLines = int(me.winHeight / me.linePixelHeight)
+        textViewLines = int(self.winHeight / self.linePixelHeight)
 
-        firstLine = me.topL - int(
-            (textViewLines - (me.botL - me.topL)) * float(me.topL) / float(
-                len(me.lines)))
-        if firstLine < 0: firstLine = 0
+        firstLine = self.topL - int(
+            (textViewLines - (self.botL - self.topL)) *
+            float(self.topL) / float(len(self.lines))
+        )
+
+        if firstLine < 0:
+            firstLine = 0
 
         lastLine = firstLine + textViewLines
-        if lastLine > len(me.lines): lastLine = len(me.lines)
+        if lastLine > len(self.lines):
+            lastLine = len(self.lines)
 
         sofarH = 0
 
         for i in range(firstLine, lastLine, 1):
-            cr.show_text(me.lines[i])
-            sofarH += me.linePixelHeight
+            cr.show_text(self.lines[i])
+            sofarH += self.linePixelHeight
             cr.move_to(0, sofarH)
 
         cr.set_source(cr.pop_group())
-        cr.rectangle(0, 0, me.winWidth, me.winHeight)
+        cr.rectangle(0, 0, self.winWidth, self.winHeight)
         cr.fill()
 
         # draw the scrollbar
-        topY = (me.topL - firstLine) * me.linePixelHeight
-        if topY < 0: topY = 0
-        botY = topY + me.linePixelHeight * (me.botL - me.topL)
+        topY = (self.topL - firstLine) * self.linePixelHeight
+
+        if topY < 0:
+            topY = 0
+
+        botY = topY + self.linePixelHeight * (self.botL - self.topL)
         # TODO: handle case   if botY > ?
 
         cr.set_source_rgba(.3, .3, .3, .35)
-        cr.rectangle(0, topY, me.winWidth, botY - topY)
+        cr.rectangle(0, topY, self.winWidth, botY - topY)
         cr.fill()
         cr.stroke()
 
 
 class TextmapWindowHelper:
-    def __init__(me, plugin, window):
-        me.window = window
-        me.plugin = plugin
+    def __init__(self, plugin, window):
+        self.window = window
+        self.plugin = plugin
 
-        panel = me.window.get_side_panel()
+        panel = self.window.get_side_panel()
         image = Gtk.Image()
         image.set_from_stock(Gtk.STOCK_DND_MULTIPLE, Gtk.IconSize.BUTTON)
-        me.textmapview = TextmapView(me.window)
-        me.ui_id = panel.add_titled(me.textmapview, "TextMap", "textMap")
+        self.textmapview = TextmapView(self.window)
+        self.ui_id = panel.add_titled(self.textmapview, "TextMap", "textMap")
 
-        me.panel = panel
+        self.panel = panel
 
-    def deactivate(me):
-        me.window = None
-        me.plugin = None
-        me.textmapview = None
+    def deactivate(self):
+        self.window = None
+        self.plugin = None
+        self.textmapview = None
 
-    def update_ui(me):
-        queue_refresh(me.textmapview)
+    def update_ui(self):
+        queue_refresh(self.textmapview)
 
 
 class WindowActivatable(GObject.Object, Gedit.WindowActivatable):
